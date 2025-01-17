@@ -1,0 +1,20 @@
+# Your Telegram bot token received from @BotFather
+teloxide_token = "<Your token here>"
+
+# The path to the bot log file
+log_path = "log.txt"
+
+# Whether to allow access to the bot only for specific users
+restrict_access = false
+
+# The list of users that will have access to the bot
+allowed_users = []
+
+# Expense categories
+categories = ["Category 1", "Category 2", "Category 3", "Category 4"]
+
+# Expense subcategories
+subcategories = ["Subcategory 1", "Subcategory 2"]
+
+# Default currency
+default_currency = "USD"

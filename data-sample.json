@@ -1,0 +1,16 @@
+{
+  "2025": [
+      { "month": 1, "id": "3a4d876f4f8eaf57abe398fcd57e8c34" },
+      { "month": 2, "id": "2b5a987e3f9bcf869084de5eef8a1d29" },
+      { "month": 3, "id": "1c6b189e2a7daf97b91302f4ff56d82b" },
+      { "month": 4, "id": "6d7a087e5c9eab47ac51df9fef79c34a" },
+      { "month": 5, "id": "4e8a789e3d7cde69b852ef9dcf82b74b" },
+      { "month": 6, "id": "5f7b689f2e8fbc47ab53ef9acf75c61b" },
+      { "month": 7, "id": "3c1d189e9e7cdf56b561beabd67d81aa" },
+      { "month": 8, "id": "2e2d099f8c7ce856ab91ff9edf71b35c" },
+      { "month": 9, "id": "6b5d199d5b8de949f562be9cfb87d34d" },
+      { "month": 10, "id": "5c4a189e4f9dfc68b953ef9adc78a28d" },
+      { "month": 11, "id": "1d6a089e3e8afa67ba53fe9eaf74b61c" },
+      { "month": 12, "id": "3b4d188e2d7fbd57ab38ae4cfb82a95d" }
+  ]
+}
