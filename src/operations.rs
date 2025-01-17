@@ -66,6 +66,10 @@ fn get_database_id() -> Result<String, Box<dyn Error>> {
     }
 }
 
+fn is_empty_subcategory(subcategory: String) -> bool {
+    subcategory.is_empty() || subcategory == "[EMPTY]" 
+}
+
 async fn add_database_record(amount: f64, category: String, subcategory: String) -> Option<()> {
     let database_id = get_database_id().ok()?;
     let notion = Notion::new();
@@ -73,7 +77,7 @@ async fn add_database_record(amount: f64, category: String, subcategory: String)
     let mut properties: FxHashMap<String, PageProperty> = FxHashMap::default();
     properties.insert(String::from("Amount"), PageProperty::number(amount));
     properties.insert(String::from("Category"), PageProperty::select(category));
-    if !subcategory.is_empty() {
+    if !is_empty_subcategory(subcategory.clone()) {
         properties.insert(
             String::from("Subcategory"),
             PageProperty::select(subcategory),
@@ -235,18 +239,24 @@ pub async fn handle_category_check_and_amount_input(
             }
 
             if result.is_some() {
-                bot.send_message(
-                    msg.chat.id,
+                let message = if is_empty_subcategory(selected_subcategory.clone()) {
                     format!(
                         "✅ <b>Expense added</b>!\n\n\
-                                                <b>Amount</b>: {} {}\n\
-                                                <b>Category</b>: {}\n\
-                                                <b>Subcategory</b>: {}",
+                        <b>Amount</b>: {} {}\n\
+                        <b>Category</b>: {}",
+                        amount, config.default_currency, selected_category
+                    )
+                } else {
+                    format!(
+                        "✅ <b>Expense added</b>!\n\n\
+                        <b>Amount</b>: {} {}\n\
+                        <b>Category</b>: {}\n\
+                        <b>Subcategory</b>: {}",
                         amount, config.default_currency, selected_category, selected_subcategory
-                    ),
-                )
-                .parse_mode(ParseMode::Html)
-                .await?;
+                    )
+                };
+                bot.send_message(msg.chat.id, message).parse_mode(ParseMode::Html)
+                    .await?;
             } else {
                 bot.send_message(msg.chat.id, "❌ Error adding expense. Please try again.")
                     .await?;
