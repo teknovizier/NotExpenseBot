@@ -123,8 +123,8 @@ async fn show_categories_list(
 ) -> HandlerResult {
     // Create a reply keyboard with (sub)categories
     let buttons: Vec<Vec<KeyboardButton>> = categories
-        .into_iter()
-        .map(|category| vec![KeyboardButton::new(category)])
+        .chunks(2) // Show two buttons per row
+        .map(|chunk| chunk.iter().map(|category| KeyboardButton::new(category)).collect())
         .collect();
 
     let keyboard = KeyboardMarkup::new(buttons);
