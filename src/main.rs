@@ -64,7 +64,7 @@ async fn main() {
                 })
                 .endpoint(operations::handle_subcategory_selection),
         )
-        .branch(dptree::entry().endpoint(operations::handle_amount_input));
+        .branch(dptree::entry().endpoint(operations::handle_category_check_and_amount_input));
 
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![config, state])

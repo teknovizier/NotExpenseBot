@@ -101,7 +101,17 @@ pub async fn reply_not_authorized(bot: Bot, msg: Message) -> HandlerResult {
     Ok(())
 }
 
-pub async fn start(bot: Bot, msg: Message, config: Config) -> HandlerResult {
+pub async fn start(
+    bot: Bot,
+    msg: Message,
+    state: Arc<Mutex<State>>,
+    config: Config,
+) -> HandlerResult {
+    // Clear the state
+    let mut state = state.lock().await;
+    state.selected_category = None;
+    state.selected_subcategory = None;
+
     bot.send_message(
         msg.chat.id,
         "💰 Welcome to @NotExpenseBot.\nThis bot makes it easy to track \
@@ -109,7 +119,7 @@ pub async fn start(bot: Bot, msg: Message, config: Config) -> HandlerResult {
     )
     .await?;
 
-    bot.send_message(msg.chat.id, "➕ Let's add an expense!")
+    bot.send_message(msg.chat.id, "➕ Let's add a new expense!")
         .await?;
     // Show the list of categories
     show_categories_list(bot, msg.chat.id, config.categories, "category").await
@@ -180,33 +190,49 @@ pub async fn handle_subcategory_selection(
     Ok(())
 }
 
-pub async fn handle_amount_input(
+pub async fn handle_category_check_and_amount_input(
     bot: Bot,
     msg: Message,
     state: Arc<Mutex<State>>,
     config: Config,
 ) -> HandlerResult {
-    if let Some(amount) = msg.text() {
+    let mut state = state.lock().await;
+    let selected_category = state
+        .selected_category
+        .clone()
+        .unwrap_or("Unknown".to_string());
+    let selected_subcategory = state
+        .selected_subcategory
+        .clone()
+        .unwrap_or("Unknown".to_string());
+
+    // Check if the category or subcategory is empty or unknown
+    if selected_category.is_empty()
+        || selected_category == "Unknown"
+        || selected_subcategory.is_empty()
+        || selected_subcategory == "Unknown" {
+        // Restart the flow in this case
+        bot.send_message(
+            msg.chat.id,
+            "❌ The category you entered doesn't exist. Please try again.",
+        )
+        .await?;
+        show_categories_list(bot, msg.chat.id, config.categories, "category").await?;
+    } else if let Some(amount) = msg.text() {
         // Validate the amount
         if let Ok(amount) = amount.parse::<f64>() {
-            // Lock the state and get the selected category
-            let state = state.lock().await;
-            let selected_category = state
-                .selected_category
-                .clone()
-                .unwrap_or("Unknown".to_string());
-            let selected_subcategory = state
-                .selected_subcategory
-                .clone()
-                .unwrap_or("Unknown".to_string());
-            drop(state);
-
             let result = add_database_record(
                 amount,
                 selected_category.clone(),
                 selected_subcategory.clone(),
             )
             .await;
+
+            // Clear state
+            {
+                state.selected_category = None;
+                state.selected_subcategory = None;
+            }
 
             if result.is_some() {
                 bot.send_message(
@@ -227,7 +253,7 @@ pub async fn handle_amount_input(
             }
 
             // Anyway, restart the flow by showing categories again
-            bot.send_message(msg.chat.id, "➕ Let's add an expense!")
+            bot.send_message(msg.chat.id, "➕ Let's add a new expense!")
                 .await?;
             show_categories_list(bot, msg.chat.id, config.categories, "category").await?;
         } else {
