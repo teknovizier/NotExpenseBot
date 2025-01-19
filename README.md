@@ -4,7 +4,7 @@ NotExpenseBot
 A Telegram bot designed for tracking private expenses. Users start the bot, choose a category and subcategory, enter the amount, and the data is added to a Notion database. Currently, it's required to manually specify Notion database IDs in a JSON config file.
 
 Currently, the bot is designed to store data in separate databases for each month.
-Each database must contain the following extra fields: "Amount" (type: Number), "Category" (type: Select), and "Subcategory" (type: Select).
+Each database must contain the following extra fields: "Amount" (type: Number), "Category" (type: Select), "Subcategory" (type: Select) and "Comment" (type: Text).
 
 Setting up
 -------

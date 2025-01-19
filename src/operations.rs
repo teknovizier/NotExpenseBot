@@ -83,6 +83,8 @@ async fn add_database_record(amount: f64, category: String, subcategory: String)
             PageProperty::select(subcategory),
         );
     }
+    let default_comment = vec![RichText::from_str("Added by @NotExpenseBot".to_string())];
+    properties.insert(String::from("Comment"), PageProperty::rich_text(default_comment));
     let mut page = Page::from_properties(properties);
     page.parent.type_name = ParentType::Database;
     page.parent.database_id = Some(database_id);
