@@ -12,7 +12,7 @@ use std::io::BufReader;
 use std::sync::Arc;
 use teloxide::types::{KeyboardButton, KeyboardMarkup, KeyboardRemove, ParseMode};
 use teloxide::{prelude::*, utils::command::BotCommands};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
@@ -72,7 +72,7 @@ fn get_database_id() -> Result<String, Box<dyn Error>> {
 }
 
 fn is_empty_subcategory(subcategory: String) -> bool {
-    subcategory.is_empty() || subcategory == "[EMPTY]" 
+    subcategory.is_empty() || subcategory == "[EMPTY]"
 }
 
 async fn add_database_record(amount: f64, category: String, subcategory: String) -> Option<()> {
@@ -89,7 +89,10 @@ async fn add_database_record(amount: f64, category: String, subcategory: String)
         );
     }
     let default_comment = vec![RichText::from_str("Added by @NotExpenseBot".to_string())];
-    properties.insert(String::from("Comment"), PageProperty::rich_text(default_comment));
+    properties.insert(
+        String::from("Comment"),
+        PageProperty::rich_text(default_comment),
+    );
     let mut page = Page::from_properties(properties);
     page.parent.type_name = ParentType::Database;
     page.parent.database_id = Some(database_id);
@@ -105,49 +108,6 @@ async fn add_database_record(amount: f64, category: String, subcategory: String)
     }
 }
 
-pub async fn reply_not_authorized(bot: Bot, msg: Message) -> HandlerResult {
-    warn!("Unauthorized access attempt!");
-    bot.send_message(msg.chat.id, "❗ You are not authorized to use this bot.")
-        .await?;
-    Ok(())
-}
-
-pub async fn start(bot: Bot, msg: Message) -> HandlerResult {
-    let intro_text = format!("<b>💰 Welcome to @NotExpenseBot!</b>\n\n\
-    This bot makes it easy to track \
-    and save your expenses directly to a Notion database.\n\n\
-    Use /help to see available commands.");
-    bot.send_message(
-        msg.chat.id,
-        intro_text,
-    )
-    .parse_mode(ParseMode::Html)
-    .await?;
-    Ok(())
-}
-
-pub async fn help(bot: Bot, msg: Message) -> HandlerResult {
-    bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?;
-    Ok(())
-}
-
-pub async fn new(
-    bot: Bot,
-    msg: Message,
-    state: Arc<Mutex<State>>,
-    config: Config,
-) -> HandlerResult {
-    // Clear the state
-    let mut state = state.lock().await;
-    state.selected_category = None;
-    state.selected_subcategory = None;
-
-    bot.send_message(msg.chat.id, "➕ Let's add a new expense!")
-        .await?;
-    // Show the list of categories
-    show_categories_list(bot, msg.chat.id, config.categories, "category").await
-}
-
 async fn show_categories_list(
     bot: Bot,
     chat_id: ChatId,
@@ -157,7 +117,7 @@ async fn show_categories_list(
     // Create a reply keyboard with (sub)categories
     let buttons: Vec<Vec<KeyboardButton>> = categories
         .chunks(2) // Show two buttons per row
-        .map(|chunk| chunk.iter().map(|category| KeyboardButton::new(category)).collect())
+        .map(|chunk| chunk.iter().map(KeyboardButton::new).collect())
         .collect();
 
     let keyboard = KeyboardMarkup::new(buttons);
@@ -168,6 +128,51 @@ async fn show_categories_list(
         .await?;
 
     Ok(())
+}
+
+async fn clear_state(mut state: MutexGuard<'_, State>) {
+    state.selected_category = None;
+    state.selected_subcategory = None;
+}
+
+pub async fn reply_not_authorized(bot: Bot, msg: Message) -> HandlerResult {
+    warn!("Unauthorized access attempt!");
+    bot.send_message(msg.chat.id, "❗ You are not authorized to use this bot.")
+        .await?;
+    Ok(())
+}
+
+pub async fn start(bot: Bot, msg: Message) -> HandlerResult {
+    let intro_text = "<b>💰 Welcome to @NotExpenseBot!</b>\n\n\
+    This bot makes it easy to track \
+    and save your expenses directly to a Notion database.\n\n\
+    Use /help to see available commands."
+        .to_string();
+    bot.send_message(msg.chat.id, intro_text)
+        .parse_mode(ParseMode::Html)
+        .await?;
+    Ok(())
+}
+
+pub async fn help(bot: Bot, msg: Message) -> HandlerResult {
+    bot.send_message(msg.chat.id, Command::descriptions().to_string())
+        .await?;
+    Ok(())
+}
+
+pub async fn new(
+    bot: Bot,
+    msg: Message,
+    state: Arc<Mutex<State>>,
+    config: Config,
+) -> HandlerResult {
+    // Clear the state
+    let state = state.lock().await;
+    clear_state(state).await;
+    bot.send_message(msg.chat.id, "➕ Let's add a new expense!")
+        .await?;
+    // Show the list of categories
+    show_categories_list(bot, msg.chat.id, config.categories, "category").await
 }
 
 pub async fn handle_category_selection(
@@ -219,7 +224,7 @@ pub async fn handle_category_check_and_amount_input(
     state: Arc<Mutex<State>>,
     config: Config,
 ) -> HandlerResult {
-    let mut state = state.lock().await;
+    let state = state.lock().await;
     let selected_category = state
         .selected_category
         .clone()
@@ -233,7 +238,8 @@ pub async fn handle_category_check_and_amount_input(
     if selected_category.is_empty()
         || selected_category == "Unknown"
         || selected_subcategory.is_empty()
-        || selected_subcategory == "Unknown" {
+        || selected_subcategory == "Unknown"
+    {
         // Restart the flow in this case
         bot.send_message(
             msg.chat.id,
@@ -268,12 +274,16 @@ pub async fn handle_category_check_and_amount_input(
                         amount, config.default_currency, selected_category, selected_subcategory
                     )
                 };
-                bot.send_message(msg.chat.id, message).parse_mode(ParseMode::Html)
+                bot.send_message(msg.chat.id, message)
+                    .parse_mode(ParseMode::Html)
                     .await?;
             } else {
                 bot.send_message(msg.chat.id, "❌ Error adding expense. Please try again.")
                     .await?;
             }
+
+            // Clear the state
+            clear_state(state).await;
         } else {
             bot.send_message(msg.chat.id, "❌ Invalid amount. Please enter a number.")
                 .await?;
