@@ -27,10 +27,12 @@ async fn main() {
 
     // Initialize the state
     let state = Arc::new(Mutex::new(operations::State::default()));
+
     let bot = Bot::new(&config.teloxide_token);
 
     let command_handler = teloxide::filter_command::<Command, _>()
-        .branch(dptree::case![Command::Start].endpoint(operations::start));
+        .branch(dptree::case![Command::Start].endpoint(operations::start))
+        .branch(dptree::case![Command::New].endpoint(operations::new));
 
     let handler = Update::filter_message()
         .branch(

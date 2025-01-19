@@ -25,6 +25,7 @@ use crate::Config;
 )]
 pub enum Command {
     Start,
+    New,
 }
 
 #[derive(Clone, Default)]
@@ -107,7 +108,21 @@ pub async fn reply_not_authorized(bot: Bot, msg: Message) -> HandlerResult {
     Ok(())
 }
 
-pub async fn start(
+pub async fn start(bot: Bot, msg: Message) -> HandlerResult {
+    let intro_text = format!("<b>💰 Welcome to @NotExpenseBot!</b>\n\n\
+    This bot makes it easy to track \
+    and save your expenses directly to a Notion database.\n\
+    Let's go!");
+    bot.send_message(
+        msg.chat.id,
+        intro_text,
+    )
+    .parse_mode(ParseMode::Html)
+    .await?;
+    Ok(())
+}
+
+pub async fn new(
     bot: Bot,
     msg: Message,
     state: Arc<Mutex<State>>,
@@ -117,13 +132,6 @@ pub async fn start(
     let mut state = state.lock().await;
     state.selected_category = None;
     state.selected_subcategory = None;
-
-    bot.send_message(
-        msg.chat.id,
-        "💰 Welcome to @NotExpenseBot.\nThis bot makes it easy to track \
-    and save your expenses directly to a Notion database.\nLet's go!",
-    )
-    .await?;
 
     bot.send_message(msg.chat.id, "➕ Let's add a new expense!")
         .await?;
@@ -234,12 +242,6 @@ pub async fn handle_category_check_and_amount_input(
             )
             .await;
 
-            // Clear state
-            {
-                state.selected_category = None;
-                state.selected_subcategory = None;
-            }
-
             if result.is_some() {
                 let message = if is_empty_subcategory(selected_subcategory.clone()) {
                     format!(
@@ -263,11 +265,6 @@ pub async fn handle_category_check_and_amount_input(
                 bot.send_message(msg.chat.id, "❌ Error adding expense. Please try again.")
                     .await?;
             }
-
-            // Anyway, restart the flow by showing categories again
-            bot.send_message(msg.chat.id, "➕ Let's add a new expense!")
-                .await?;
-            show_categories_list(bot, msg.chat.id, config.categories, "category").await?;
         } else {
             bot.send_message(msg.chat.id, "❌ Invalid amount. Please enter a number.")
                 .await?;
