@@ -32,10 +32,20 @@ pub enum Command {
     New,
 }
 
+#[derive(Clone, Default, PartialEq)]
+enum DialogueState {
+    #[default]
+    Start,
+    WaitingForCategory,
+    WaitingForSubcategory,
+    WaitingForAmount,
+}
+
 #[derive(Clone, Default)]
 pub struct State {
     selected_category: Option<String>,
     selected_subcategory: Option<String>,
+    dialogue_state: DialogueState,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -133,6 +143,7 @@ async fn show_categories_list(
 async fn clear_state(mut state: MutexGuard<'_, State>) {
     state.selected_category = None;
     state.selected_subcategory = None;
+    state.dialogue_state = DialogueState::Start;
 }
 
 pub async fn reply_not_authorized(bot: Bot, msg: Message) -> HandlerResult {
@@ -166,9 +177,13 @@ pub async fn new(
     state: Arc<Mutex<State>>,
     config: Config,
 ) -> HandlerResult {
+    let mut state = state.lock().await;
+
     // Clear the state
-    let state = state.lock().await;
-    clear_state(state).await;
+    state.selected_category = None;
+    state.selected_subcategory = None;
+    state.dialogue_state = DialogueState::WaitingForCategory;
+
     bot.send_message(msg.chat.id, "➕ Let's add a new expense!")
         .await?;
     // Show the list of categories
@@ -181,10 +196,17 @@ pub async fn handle_category_selection(
     state: Arc<Mutex<State>>,
     config: Config,
 ) -> HandlerResult {
+    let mut state = state.lock().await;
+
+    // Validate dialogue state
+    if state.dialogue_state != DialogueState::WaitingForCategory {
+        return Ok(());
+    }
+
     if let Some(category) = msg.text() {
         // Store the selected category in the state
-        let mut state = state.lock().await;
         state.selected_category = Some(category.to_string());
+        state.dialogue_state = DialogueState::WaitingForSubcategory;
 
         // Show the list of subcategories
         show_categories_list(bot, msg.chat.id, config.subcategories, "subcategory").await?
@@ -198,10 +220,17 @@ pub async fn handle_subcategory_selection(
     state: Arc<Mutex<State>>,
     config: Config,
 ) -> HandlerResult {
+    let mut state = state.lock().await;
+
+    // Validate dialogue state
+    if state.dialogue_state != DialogueState::WaitingForSubcategory {
+        return Ok(());
+    }
+
     if let Some(subcategory) = msg.text() {
         // Store the selected subcategory in the state
-        let mut state = state.lock().await;
         state.selected_subcategory = Some(subcategory.to_string());
+        state.dialogue_state = DialogueState::WaitingForAmount;
 
         // Ask for the amount
         bot.send_message(
@@ -225,29 +254,16 @@ pub async fn handle_category_check_and_amount_input(
     config: Config,
 ) -> HandlerResult {
     let state = state.lock().await;
-    let selected_category = state
-        .selected_category
-        .clone()
-        .unwrap_or("Unknown".to_string());
-    let selected_subcategory = state
-        .selected_subcategory
-        .clone()
-        .unwrap_or("Unknown".to_string());
 
-    // Check if the category or subcategory is empty or unknown
-    if selected_category.is_empty()
-        || selected_category == "Unknown"
-        || selected_subcategory.is_empty()
-        || selected_subcategory == "Unknown"
-    {
-        // Restart the flow in this case
-        bot.send_message(
-            msg.chat.id,
-            "❌ The category you entered doesn't exist. Please try again.",
-        )
-        .await?;
-        show_categories_list(bot, msg.chat.id, config.categories, "category").await?;
-    } else if let Some(amount) = msg.text() {
+    // Validate dialogue state
+    if state.dialogue_state != DialogueState::WaitingForAmount {
+        return Ok(());
+    }
+
+    let selected_category = state.selected_category.clone().unwrap_or_default();
+    let selected_subcategory = state.selected_subcategory.clone().unwrap_or_default();
+
+    if let Some(amount) = msg.text() {
         // Validate the amount
         if let Ok(amount) = amount.parse::<f64>() {
             let result = add_database_record(
