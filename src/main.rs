@@ -32,6 +32,7 @@ async fn main() {
 
     let command_handler = teloxide::filter_command::<Command, _>()
         .branch(dptree::case![Command::Start].endpoint(operations::start))
+        .branch(dptree::case![Command::Help].endpoint(operations::help))
         .branch(dptree::case![Command::New].endpoint(operations::new));
 
     let handler = Update::filter_message()

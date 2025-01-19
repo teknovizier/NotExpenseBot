@@ -24,7 +24,11 @@ use crate::Config;
     description = "These commands are supported:"
 )]
 pub enum Command {
+    #[command(description = "start bot.")]
     Start,
+    #[command(description = "display this text.")]
+    Help,
+    #[command(description = "add a new expense.")]
     New,
 }
 
@@ -111,14 +115,19 @@ pub async fn reply_not_authorized(bot: Bot, msg: Message) -> HandlerResult {
 pub async fn start(bot: Bot, msg: Message) -> HandlerResult {
     let intro_text = format!("<b>💰 Welcome to @NotExpenseBot!</b>\n\n\
     This bot makes it easy to track \
-    and save your expenses directly to a Notion database.\n\
-    Let's go!");
+    and save your expenses directly to a Notion database.\n\n\
+    Use /help to see available commands.");
     bot.send_message(
         msg.chat.id,
         intro_text,
     )
     .parse_mode(ParseMode::Html)
     .await?;
+    Ok(())
+}
+
+pub async fn help(bot: Bot, msg: Message) -> HandlerResult {
+    bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?;
     Ok(())
 }
 
