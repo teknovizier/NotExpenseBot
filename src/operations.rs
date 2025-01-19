@@ -24,11 +24,11 @@ use crate::Config;
     description = "These commands are supported:"
 )]
 pub enum Command {
-    #[command(description = "start bot.")]
+    #[command(description = "start the bot and show welcome message")]
     Start,
-    #[command(description = "display this text.")]
+    #[command(description = "display the list of available commands")]
     Help,
-    #[command(description = "add a new expense.")]
+    #[command(description = "add a new expense to the database")]
     New,
 }
 
@@ -162,6 +162,10 @@ pub async fn start(bot: Bot, msg: Message) -> HandlerResult {
     bot.send_message(msg.chat.id, intro_text)
         .parse_mode(ParseMode::Html)
         .await?;
+
+    // Set up the bot commands menu
+    bot.set_my_commands(Command::bot_commands()).await?;
+
     Ok(())
 }
 
