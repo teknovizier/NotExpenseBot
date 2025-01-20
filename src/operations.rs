@@ -277,12 +277,16 @@ pub async fn handle_amount_input(
 
         // Validate the amount
         if let Ok(amount) = amount.parse::<f64>() {
+            let waiting_msg = bot.send_message(msg.chat.id, "⌛️").await?;
+
             let result = add_database_record(
                 amount,
                 selected_category.clone(),
                 selected_subcategory.clone(),
             )
             .await;
+
+            bot.delete_message(msg.chat.id, waiting_msg.id).await?;
 
             if result.is_some() {
                 let message = if is_empty_subcategory(selected_subcategory.clone()) {
