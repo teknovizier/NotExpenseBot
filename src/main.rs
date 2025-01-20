@@ -1,12 +1,13 @@
 use log2::*;
 use std::sync::Arc;
-use teloxide::prelude::*;
+use teloxide::{dispatching::dialogue::InMemStorage, prelude::*};
 use tokio::sync::Mutex;
 
 mod operations;
 mod utils;
 
 use operations::Command;
+use operations::{DialogueState, State};
 use utils::Config;
 
 #[tokio::main]
@@ -26,7 +27,7 @@ async fn main() {
     info!("Starting bot...");
 
     // Initialize the state
-    let state = Arc::new(Mutex::new(operations::State::default()));
+    let state = Arc::new(Mutex::new(State::default()));
 
     let bot = Bot::new(&config.teloxide_token);
 
@@ -36,6 +37,7 @@ async fn main() {
         .branch(dptree::case![Command::New].endpoint(operations::new));
 
     let handler = Update::filter_message()
+        .enter_dialogue::<Message, InMemStorage<DialogueState>, DialogueState>()
         .branch(
             dptree::filter(|msg: Message, config: Config| {
                 config.restrict_access && !config.allowed_users.contains(&(msg.chat.id.0 as u64))
@@ -44,33 +46,24 @@ async fn main() {
         )
         .branch(command_handler)
         .branch(
-            dptree::entry()
-                .filter({
-                    let categories = config.categories.clone();
-                    move |msg: Message| {
-                        msg.text()
-                            .map(|text| categories.contains(&text.to_string()))
-                            .unwrap_or(false)
-                    }
-                })
+            dptree::case![DialogueState::WaitingForCategory]
                 .endpoint(operations::handle_category_selection),
         )
         .branch(
-            dptree::entry()
-                .filter({
-                    let subcategories = config.subcategories.clone();
-                    move |msg: Message| {
-                        msg.text()
-                            .map(|text| subcategories.contains(&text.to_string()))
-                            .unwrap_or(false)
-                    }
-                })
+            dptree::case![DialogueState::WaitingForSubcategory]
                 .endpoint(operations::handle_subcategory_selection),
         )
-        .branch(dptree::entry().endpoint(operations::handle_category_check_and_amount_input));
+        .branch(
+            dptree::case![DialogueState::WaitingForAmount]
+                .endpoint(operations::handle_amount_input),
+        );
 
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![config, state])
+        .dependencies(dptree::deps![
+            config,
+            state,
+            InMemStorage::<DialogueState>::new()
+        ])
         .enable_ctrlc_handler()
         .build()
         .dispatch()

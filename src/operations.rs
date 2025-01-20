@@ -11,9 +11,10 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
 use teloxide::types::{KeyboardButton, KeyboardMarkup, KeyboardRemove, ParseMode};
-use teloxide::{prelude::*, utils::command::BotCommands};
+use teloxide::{dispatching::dialogue::InMemStorage, prelude::*, utils::command::BotCommands};
 use tokio::sync::{Mutex, MutexGuard};
 
+type MyDialogue = Dialogue<DialogueState, InMemStorage<DialogueState>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 use crate::Config;
@@ -32,8 +33,8 @@ pub enum Command {
     New,
 }
 
-#[derive(Clone, Default, PartialEq)]
-enum DialogueState {
+#[derive(Clone, Default)]
+pub enum DialogueState {
     #[default]
     Start,
     WaitingForCategory,
@@ -45,7 +46,6 @@ enum DialogueState {
 pub struct State {
     selected_category: Option<String>,
     selected_subcategory: Option<String>,
-    dialogue_state: DialogueState,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -143,7 +143,6 @@ async fn show_categories_list(
 async fn clear_state(mut state: MutexGuard<'_, State>) {
     state.selected_category = None;
     state.selected_subcategory = None;
-    state.dialogue_state = DialogueState::Start;
 }
 
 pub async fn reply_not_authorized(bot: Bot, msg: Message) -> HandlerResult {
@@ -177,16 +176,17 @@ pub async fn help(bot: Bot, msg: Message) -> HandlerResult {
 
 pub async fn new(
     bot: Bot,
+    dialogue: MyDialogue,
     msg: Message,
     state: Arc<Mutex<State>>,
     config: Config,
 ) -> HandlerResult {
-    let mut state = state.lock().await;
-
     // Clear the state
+    let mut state = state.lock().await;
     state.selected_category = None;
     state.selected_subcategory = None;
-    state.dialogue_state = DialogueState::WaitingForCategory;
+
+    dialogue.update(DialogueState::WaitingForCategory).await?;
 
     bot.send_message(msg.chat.id, "➕ Let's add a new expense!")
         .await?;
@@ -196,78 +196,85 @@ pub async fn new(
 
 pub async fn handle_category_selection(
     bot: Bot,
+    dialogue: MyDialogue,
     msg: Message,
     state: Arc<Mutex<State>>,
     config: Config,
 ) -> HandlerResult {
-    let mut state = state.lock().await;
-
-    // Validate dialogue state
-    if state.dialogue_state != DialogueState::WaitingForCategory {
-        return Ok(());
-    }
-
     if let Some(category) = msg.text() {
-        // Store the selected category in the state
-        state.selected_category = Some(category.to_string());
-        state.dialogue_state = DialogueState::WaitingForSubcategory;
+        let categories = config.categories.clone();
+        if categories.contains(&category.to_string()) {
+            // Store the selected category in the state
+            let mut state = state.lock().await;
+            state.selected_category = Some(category.to_string());
 
-        // Show the list of subcategories
-        show_categories_list(bot, msg.chat.id, config.subcategories, "subcategory").await?
+            dialogue
+                .update(DialogueState::WaitingForSubcategory)
+                .await?;
+
+            // Show the list of subcategories
+            show_categories_list(bot, msg.chat.id, config.subcategories, "subcategory").await?;
+        } else {
+            bot.send_message(
+                msg.chat.id,
+                "❌ Invalid category. Please choose from the existing ones.",
+            )
+            .await?;
+        }
     }
     Ok(())
 }
 
 pub async fn handle_subcategory_selection(
     bot: Bot,
+    dialogue: MyDialogue,
     msg: Message,
     state: Arc<Mutex<State>>,
     config: Config,
 ) -> HandlerResult {
-    let mut state = state.lock().await;
-
-    // Validate dialogue state
-    if state.dialogue_state != DialogueState::WaitingForSubcategory {
-        return Ok(());
-    }
-
     if let Some(subcategory) = msg.text() {
-        // Store the selected subcategory in the state
-        state.selected_subcategory = Some(subcategory.to_string());
-        state.dialogue_state = DialogueState::WaitingForAmount;
+        let subcategories = config.subcategories.clone();
+        if subcategories.contains(&subcategory.to_string()) {
+            // Store the selected subcategory in the state
+            let mut state = state.lock().await;
+            state.selected_subcategory = Some(subcategory.to_string());
 
-        // Ask for the amount
-        bot.send_message(
-            msg.chat.id,
-            format!(
-                "💵 Enter the expense amount in {}:",
-                config.default_currency
-            ),
-        )
-        .reply_markup(KeyboardRemove::new()) // Remove the keyboard
-        .await?;
+            dialogue.update(DialogueState::WaitingForAmount).await?;
+
+            // Ask for the amount
+            bot.send_message(
+                msg.chat.id,
+                format!(
+                    "💵 Enter the expense amount in {}:",
+                    config.default_currency
+                ),
+            )
+            .reply_markup(KeyboardRemove::new()) // Remove the keyboard
+            .await?;
+        } else {
+            bot.send_message(
+                msg.chat.id,
+                "❌ Invalid subcategory. Please choose from the existing ones.",
+            )
+            .await?;
+        }
     }
-
     Ok(())
 }
 
-pub async fn handle_category_check_and_amount_input(
+pub async fn handle_amount_input(
     bot: Bot,
+    dialogue: MyDialogue,
     msg: Message,
     state: Arc<Mutex<State>>,
     config: Config,
 ) -> HandlerResult {
-    let state = state.lock().await;
-
-    // Validate dialogue state
-    if state.dialogue_state != DialogueState::WaitingForAmount {
-        return Ok(());
-    }
-
-    let selected_category = state.selected_category.clone().unwrap_or_default();
-    let selected_subcategory = state.selected_subcategory.clone().unwrap_or_default();
-
     if let Some(amount) = msg.text() {
+        let state = state.lock().await;
+
+        let selected_category = state.selected_category.clone().unwrap_or_default();
+        let selected_subcategory = state.selected_subcategory.clone().unwrap_or_default();
+
         // Validate the amount
         if let Ok(amount) = amount.parse::<f64>() {
             let result = add_database_record(
@@ -304,6 +311,7 @@ pub async fn handle_category_check_and_amount_input(
 
             // Clear the state
             clear_state(state).await;
+            dialogue.exit().await?;
         } else {
             bot.send_message(msg.chat.id, "❌ Invalid amount. Please enter a number.")
                 .await?;
