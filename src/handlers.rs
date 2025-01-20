@@ -57,10 +57,18 @@ struct DatabaseInfo {
 // This is a temporary solution and should be replaced in future with direct fetch with Notion API
 fn get_database_id() -> Result<String, Box<dyn Error>> {
     // Open the JSON file.
-    let file = File::open("data.json")?;
+    let file = File::open("data.json").map_err(|e| {
+        error!("Failed to open data.json: {}", e);
+        e
+    })?;
+
     let reader = BufReader::new(file);
 
-    let data: HashMap<String, Vec<DatabaseInfo>> = serde_json::from_reader(reader)?;
+    let data: HashMap<String, Vec<DatabaseInfo>> =
+        serde_json::from_reader(reader).map_err(|e| {
+            error!("Failed to parse JSON from data.json: {}", e);
+            e
+        })?;
 
     // Extract the current year and month
     let now = Local::now();
@@ -72,12 +80,14 @@ fn get_database_id() -> Result<String, Box<dyn Error>> {
         if let Some(entry) = months.iter().find(|e| e.month == month) {
             Ok(entry.id.clone())
         } else {
-            error!("No database found for month {} in year {}", month, year);
-            Err("".into())
+            let error_msg = format!("No database found for month {} in year {}", month, year);
+            error!("{}", error_msg);
+            Err(error_msg.into())
         }
     } else {
-        error!("No databases found for year {}", year);
-        Err("".into())
+        let error_msg = format!("No databases found for year {}", year);
+        error!("{}", error_msg);
+        Err(error_msg.into())
     }
 }
 
@@ -85,8 +95,12 @@ fn is_empty_subcategory(subcategory: String) -> bool {
     subcategory.is_empty() || subcategory == "[EMPTY]"
 }
 
-async fn add_database_record(amount: f64, category: String, subcategory: String) -> Option<()> {
-    let database_id = get_database_id().ok()?;
+async fn add_database_record(
+    amount: f64,
+    category: String,
+    subcategory: String,
+) -> Result<(), Box<dyn Error>> {
+    let database_id = get_database_id()?;
     let notion = Notion::new();
 
     let mut properties: FxHashMap<String, PageProperty> = FxHashMap::default();
@@ -107,14 +121,22 @@ async fn add_database_record(amount: f64, category: String, subcategory: String)
     page.parent.type_name = ParentType::Database;
     page.parent.database_id = Some(database_id);
 
-    let response = notion.create_a_page(&page).await.ok()?;
-
-    if response.status == 200 {
-        info!("Item added successfully!");
-        Some(())
-    } else {
-        error!("Received status code {}", response.status);
-        None
+    match notion.create_a_page(&page).await {
+        Ok(response) => {
+            if response.status == 200 {
+                info!("Item added successfully!");
+                Ok(())
+            } else {
+                let error_msg = format!("Notion API returned status code: {}", response.status);
+                error!("{}", error_msg);
+                Err(error_msg.into())
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Notion API request failed: {}", e);
+            error!("{}", error_msg);
+            Err(error_msg.into())
+        }
     }
 }
 
@@ -281,7 +303,7 @@ pub async fn handle_amount_input(
             if amount < 0.0 {
                 bot.send_message(msg.chat.id, "❌ The amount cannot be negative.")
                     .await?;
-                return Ok(())
+                return Ok(());
             }
 
             let waiting_msg = bot.send_message(msg.chat.id, "⌛️").await?;
@@ -293,31 +315,37 @@ pub async fn handle_amount_input(
             )
             .await;
 
-            bot.delete_message(msg.chat.id, waiting_msg.id).await?;
-
-            if result.is_some() {
-                let message = if is_empty_subcategory(selected_subcategory.clone()) {
-                    format!(
-                        "✅ <b>Expense added</b>!\n\n\
+            match result.map_err(|e| e.to_string()) {
+                Ok(_) => {
+                    bot.delete_message(msg.chat.id, waiting_msg.id).await?;
+                    let message = if is_empty_subcategory(selected_subcategory.clone()) {
+                        format!(
+                            "✅ <b>Expense added</b>!\n\n\
                         <b>Amount</b>: {} {}\n\
                         <b>Category</b>: {}",
-                        amount, config.default_currency, selected_category
-                    )
-                } else {
-                    format!(
-                        "✅ <b>Expense added</b>!\n\n\
+                            amount, config.default_currency, selected_category
+                        )
+                    } else {
+                        format!(
+                            "✅ <b>Expense added</b>!\n\n\
                         <b>Amount</b>: {} {}\n\
                         <b>Category</b>: {}\n\
                         <b>Subcategory</b>: {}",
-                        amount, config.default_currency, selected_category, selected_subcategory
-                    )
-                };
-                bot.send_message(msg.chat.id, message)
-                    .parse_mode(ParseMode::Html)
-                    .await?;
-            } else {
-                bot.send_message(msg.chat.id, "❌ Error adding expense. Please try again.")
-                    .await?;
+                            amount,
+                            config.default_currency,
+                            selected_category,
+                            selected_subcategory
+                        )
+                    };
+                    bot.send_message(msg.chat.id, message)
+                        .parse_mode(ParseMode::Html)
+                        .await?;
+                }
+                Err(_e) => {
+                    bot.delete_message(msg.chat.id, waiting_msg.id).await?;
+                    bot.send_message(msg.chat.id, "❌ Error adding expense. Please try again.")
+                        .await?;
+                }
             }
 
             // Clear the state
