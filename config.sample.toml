@@ -5,10 +5,10 @@ teloxide_token = "<Your token here>"
 log_path = "log.txt"
 
 # Whether to allow access to the bot only for specific users
-restrict_access = false
+restrict_access = true
 
 # The list of users that will have access to the bot
-allowed_users = []
+allowed_users = [<Your Telegram ID here>]
 
 # Expense categories
 categories = ["Category 1", "Category 2", "Category 3", "Category 4"]
