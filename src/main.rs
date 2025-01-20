@@ -3,11 +3,14 @@ use std::sync::Arc;
 use teloxide::{dispatching::dialogue::InMemStorage, prelude::*};
 use tokio::sync::Mutex;
 
-mod operations;
+mod handlers;
 mod utils;
 
-use operations::Command;
-use operations::{DialogueState, State};
+use handlers::Command;
+use handlers::{
+    handle_amount_input, handle_category_selection, handle_subcategory_selection, help, new,
+    reply_not_authorized, start, DialogueState, State,
+};
 use utils::Config;
 
 #[tokio::main]
@@ -32,9 +35,9 @@ async fn main() {
     let bot = Bot::new(&config.teloxide_token);
 
     let command_handler = teloxide::filter_command::<Command, _>()
-        .branch(dptree::case![Command::Start].endpoint(operations::start))
-        .branch(dptree::case![Command::Help].endpoint(operations::help))
-        .branch(dptree::case![Command::New].endpoint(operations::new));
+        .branch(dptree::case![Command::Start].endpoint(start))
+        .branch(dptree::case![Command::Help].endpoint(help))
+        .branch(dptree::case![Command::New].endpoint(new));
 
     let handler = Update::filter_message()
         .enter_dialogue::<Message, InMemStorage<DialogueState>, DialogueState>()
@@ -42,21 +45,17 @@ async fn main() {
             dptree::filter(|msg: Message, config: Config| {
                 config.restrict_access && !config.allowed_users.contains(&(msg.chat.id.0 as u64))
             })
-            .endpoint(operations::reply_not_authorized),
+            .endpoint(reply_not_authorized),
         )
         .branch(command_handler)
         .branch(
-            dptree::case![DialogueState::WaitingForCategory]
-                .endpoint(operations::handle_category_selection),
+            dptree::case![DialogueState::WaitingForCategory].endpoint(handle_category_selection),
         )
         .branch(
             dptree::case![DialogueState::WaitingForSubcategory]
-                .endpoint(operations::handle_subcategory_selection),
+                .endpoint(handle_subcategory_selection),
         )
-        .branch(
-            dptree::case![DialogueState::WaitingForAmount]
-                .endpoint(operations::handle_amount_input),
-        );
+        .branch(dptree::case![DialogueState::WaitingForAmount].endpoint(handle_amount_input));
 
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![

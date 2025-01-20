@@ -133,7 +133,7 @@ async fn show_categories_list(
     let keyboard = KeyboardMarkup::new(buttons);
 
     // Send the message with the (sub)categories
-    bot.send_message(chat_id, &format!("🗂️ Choose a {}:", title))
+    bot.send_message(chat_id, format!("🗂️ Choose a {}:", title))
         .reply_markup(keyboard)
         .await?;
 
