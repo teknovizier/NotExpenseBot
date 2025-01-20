@@ -277,6 +277,13 @@ pub async fn handle_amount_input(
 
         // Validate the amount
         if let Ok(amount) = amount.parse::<f64>() {
+            // Do not allow negative numbers
+            if amount < 0.0 {
+                bot.send_message(msg.chat.id, "❌ The amount cannot be negative.")
+                    .await?;
+                return Ok(())
+            }
+
             let waiting_msg = bot.send_message(msg.chat.id, "⌛️").await?;
 
             let result = add_database_record(
