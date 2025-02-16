@@ -8,8 +8,8 @@ mod utils;
 
 use handlers::Command;
 use handlers::{
-    handle_amount_input, handle_category_selection, handle_subcategory_selection, help, new,
-    reply_not_authorized, start, DialogueState, State,
+    get_total_expense, handle_amount_input, handle_category_selection,
+    handle_subcategory_selection, help, new, reply_not_authorized, start, DialogueState, State,
 };
 use utils::Config;
 
@@ -37,7 +37,8 @@ async fn main() {
     let command_handler = teloxide::filter_command::<Command, _>()
         .branch(dptree::case![Command::Start].endpoint(start))
         .branch(dptree::case![Command::Help].endpoint(help))
-        .branch(dptree::case![Command::New].endpoint(new));
+        .branch(dptree::case![Command::New].endpoint(new))
+        .branch(dptree::case![Command::GetTotalExpense].endpoint(get_total_expense));
 
     let handler = Update::filter_message()
         .enter_dialogue::<Message, InMemStorage<DialogueState>, DialogueState>()

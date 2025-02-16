@@ -3,6 +3,7 @@ use fxhash::FxHashMap;
 use log2::*;
 use notion_tools::structs::common::*;
 use notion_tools::structs::page::*;
+use notion_tools::structs::query_filter::{FilterItem, NumberFilterItem, QueryFilter};
 use notion_tools::Notion;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -31,6 +32,8 @@ pub enum Command {
     Help,
     #[command(description = "add a new expense to the database")]
     New,
+    #[command(description = "get the total expense for the current month")]
+    GetTotalExpense,
 }
 
 #[derive(Clone, Default)]
@@ -140,6 +143,52 @@ async fn add_database_record(
     }
 }
 
+async fn get_total_amount() -> Result<f64, Box<dyn Error>> {
+    let mut total_amount = 0.0;
+
+    let mut notion = Notion::new();
+    let database_id = get_database_id()?;
+    notion.database_id = database_id;
+
+    // Dummy filter that should always work
+    let mut query_filter = QueryFilter::new();
+    query_filter.args(FilterItem::number(
+        String::from("Amount"),
+        NumberFilterItem::greater_than(0),
+    ));
+
+    // Limitation: This implementation currently supports databases with up to 100 entries.
+    // The Notion API returns a maximum of 100 entries per request. To handle larger databases,
+    // implement pagination using the `next_cursor` field in the API response.
+    // For details, see: https://developers.notion.com/reference/intro#pagination
+    match notion.query_database(query_filter).await {
+        Ok(response) => {
+            if response.status == 200 {
+                let entries = response.results.len();
+                for page in response.results {
+                    // Retrieve the "Amount" property
+                    if let Some(property) = page.properties.get("Amount") {
+                        if let Some(amount) = property.number {
+                            total_amount += amount;
+                        }
+                    }
+                }
+                info!("Database query completed: retrieved {} entries.", entries);
+            } else {
+                let error_msg = format!("Notion API returned status code: {}", response.status);
+                error!("{}", error_msg);
+                return Err(error_msg.into());
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Notion API request failed: {}", e);
+            error!("{}", error_msg);
+            return Err(error_msg.into());
+        }
+    }
+    Ok(total_amount)
+}
+
 async fn show_categories_list(
     bot: Bot,
     chat_id: ChatId,
@@ -214,6 +263,31 @@ pub async fn new(
         .await?;
     // Show the list of categories
     show_categories_list(bot, msg.chat.id, config.categories, "category").await
+}
+
+pub async fn get_total_expense(bot: Bot, msg: Message, config: Config) -> HandlerResult {
+    let total_amount = get_total_amount().await;
+    match total_amount.map_err(|e| e.to_string()) {
+        Ok(amount) => {
+            bot.send_message(
+                msg.chat.id,
+                format!(
+                    "💰 <b>Total expenses for this month:</b> {} {}",
+                    amount, config.default_currency
+                ),
+            )
+            .parse_mode(ParseMode::Html)
+            .await?;
+        }
+        Err(_e) => {
+            bot.send_message(
+                msg.chat.id,
+                "❌ Failed to retrieve the total amount due to unknown reason. Please try again.",
+            )
+            .await?;
+        }
+    }
+    Ok(())
 }
 
 pub async fn handle_category_selection(
