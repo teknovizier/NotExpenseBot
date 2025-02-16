@@ -162,7 +162,6 @@ async fn get_total_amount(notion_token: &str) -> Result<f64, Box<dyn Error>> {
     // For details, see: https://developers.notion.com/reference/intro#pagination
     match request.send().await {
         Ok(response) => {
-            //   if response.status == 200 {
             let entries = response.results.len();
             for page in response.results {
                 if let Some(PageProperty::Number(property)) = page.properties.get("Amount") {
