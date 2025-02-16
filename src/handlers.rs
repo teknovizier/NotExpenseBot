@@ -15,7 +15,7 @@ use tokio::sync::{Mutex, MutexGuard};
 type MyDialogue = Dialogue<DialogueState, InMemStorage<DialogueState>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-use crate::Config;
+use crate::{utils, Config};
 
 #[derive(BotCommands, Clone)]
 #[command(
@@ -375,6 +375,7 @@ pub async fn handle_amount_input(
                     .await?;
                 return Ok(());
             }
+            let amount = utils::round_to_two_digits(amount);
 
             let waiting_msg = bot.send_message(msg.chat.id, "⌛️").await?;
 

@@ -26,3 +26,7 @@ pub fn load_config(file: &str) -> Config {
 
     config
 }
+
+pub fn round_to_two_digits(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}
