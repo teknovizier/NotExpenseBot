@@ -272,7 +272,7 @@ pub async fn get_total_expense(bot: Bot, msg: Message, config: Config) -> Handle
             bot.send_message(
                 msg.chat.id,
                 format!(
-                    "💰 <b>Total expenses for this month:</b> {} {}",
+                    "💰 <b>Total expenses for this month:</b> {:.2} {}",
                     amount, config.default_currency
                 ),
             )
