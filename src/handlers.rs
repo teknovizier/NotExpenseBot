@@ -1,10 +1,7 @@
 use chrono::{Datelike, Local};
-use fxhash::FxHashMap;
 use log2::*;
-use notion_tools::structs::common::*;
-use notion_tools::structs::page::*;
-use notion_tools::structs::query_filter::{FilterItem, NumberFilterItem, QueryFilter};
-use notion_tools::Notion;
+use notionrs::page::PageProperty;
+use notionrs::{filter::Filter, Client, RichText};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -102,38 +99,41 @@ async fn add_database_record(
     amount: f64,
     category: String,
     subcategory: String,
+    notion_token: &str,
 ) -> Result<(), Box<dyn Error>> {
     let database_id = get_database_id()?;
-    let notion = Notion::new();
+    let client = Client::new().secret(notion_token);
 
-    let mut properties: FxHashMap<String, PageProperty> = FxHashMap::default();
-    properties.insert(String::from("Amount"), PageProperty::number(amount));
-    properties.insert(String::from("Category"), PageProperty::select(category));
+    let mut properties = std::collections::HashMap::new();
+    properties.insert("Amount".to_string(), PageProperty::Number(amount.into()));
+    properties.insert(
+        "Category".to_string(),
+        PageProperty::Select(category.into()),
+    );
     if !is_empty_subcategory(subcategory.clone()) {
         properties.insert(
-            String::from("Subcategory"),
-            PageProperty::select(subcategory),
+            "Subcategory".to_string(),
+            PageProperty::Select(subcategory.into()),
         );
     }
-    let default_comment = vec![RichText::from_str("Added by @NotExpenseBot".to_string())];
+    let default_comment = RichText::from("Added by @NotExpenseBot".to_string());
     properties.insert(
-        String::from("Comment"),
-        PageProperty::rich_text(default_comment),
+        "Comment".to_string(),
+        PageProperty::RichText(default_comment.into()),
     );
-    let mut page = Page::from_properties(properties);
-    page.parent.type_name = ParentType::Database;
-    page.parent.database_id = Some(database_id);
 
-    match notion.create_a_page(&page).await {
+    let request = client
+        .create_page()
+        .database_id(&database_id)
+        .properties(properties);
+
+    match request.send().await {
         Ok(response) => {
-            if response.status == 200 {
-                info!("Item added successfully!");
-                Ok(())
-            } else {
-                let error_msg = format!("Notion API returned status code: {}", response.status);
-                error!("{}", error_msg);
-                Err(error_msg.into())
-            }
+            info!(
+                "Successfully added page with id {} to the database {}.",
+                response.id, &database_id
+            );
+            Ok(())
         }
         Err(e) => {
             let error_msg = format!("Notion API request failed: {}", e);
@@ -143,42 +143,38 @@ async fn add_database_record(
     }
 }
 
-async fn get_total_amount() -> Result<f64, Box<dyn Error>> {
+async fn get_total_amount(notion_token: &str) -> Result<f64, Box<dyn Error>> {
     let mut total_amount = 0.0;
-
-    let mut notion = Notion::new();
+    let client = Client::new().secret(notion_token);
     let database_id = get_database_id()?;
-    notion.database_id = database_id;
 
     // Dummy filter that should always work
-    let mut query_filter = QueryFilter::new();
-    query_filter.args(FilterItem::number(
-        String::from("Amount"),
-        NumberFilterItem::greater_than(0),
-    ));
+    let filter = Filter::number_is_not_empty("Amount");
+
+    let request = client
+        .query_database()
+        .database_id(&database_id)
+        .filter(filter);
 
     // Limitation: This implementation currently supports databases with up to 100 entries.
     // The Notion API returns a maximum of 100 entries per request. To handle larger databases,
     // implement pagination using the `next_cursor` field in the API response.
     // For details, see: https://developers.notion.com/reference/intro#pagination
-    match notion.query_database(query_filter).await {
+    match request.send().await {
         Ok(response) => {
-            if response.status == 200 {
-                let entries = response.results.len();
-                for page in response.results {
-                    // Retrieve the "Amount" property
-                    if let Some(property) = page.properties.get("Amount") {
-                        if let Some(amount) = property.number {
-                            total_amount += amount;
-                        }
+            //   if response.status == 200 {
+            let entries = response.results.len();
+            for page in response.results {
+                if let Some(PageProperty::Number(property)) = page.properties.get("Amount") {
+                    if let Some(amount) = property.number {
+                        total_amount += amount;
                     }
                 }
-                info!("Database query completed: retrieved {} entries.", entries);
-            } else {
-                let error_msg = format!("Notion API returned status code: {}", response.status);
-                error!("{}", error_msg);
-                return Err(error_msg.into());
             }
+            info!(
+                "Database query completed: retrieved {} entries from database {}.",
+                entries, &database_id
+            );
         }
         Err(e) => {
             let error_msg = format!("Notion API request failed: {}", e);
@@ -266,7 +262,7 @@ pub async fn new(
 }
 
 pub async fn get_total_expense(bot: Bot, msg: Message, config: Config) -> HandlerResult {
-    let total_amount = get_total_amount().await;
+    let total_amount = get_total_amount(&config.notion_token).await;
     match total_amount.map_err(|e| e.to_string()) {
         Ok(amount) => {
             bot.send_message(
@@ -386,6 +382,7 @@ pub async fn handle_amount_input(
                 amount,
                 selected_category.clone(),
                 selected_subcategory.clone(),
+                &config.notion_token,
             )
             .await;
 

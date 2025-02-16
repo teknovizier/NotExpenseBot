@@ -4,6 +4,7 @@ use std::fs;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub teloxide_token: String,
+    pub notion_token: String,
     pub log_path: String,
     pub restrict_access: bool,
     pub allowed_users: Vec<u64>,
