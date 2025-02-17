@@ -5,6 +5,7 @@ use std::fs;
 pub struct Config {
     pub teloxide_token: String,
     pub notion_token: String,
+    pub notion_parent_page_id: String,
     pub log_path: String,
     pub restrict_access: bool,
     pub allowed_users: Vec<u64>,
@@ -29,4 +30,22 @@ pub fn load_config(file: &str) -> Config {
 
 pub fn round_to_two_digits(value: f64) -> f64 {
     (value * 100.0).round() / 100.0
+}
+
+pub fn get_month_number(month_name: &str) -> Option<u32> {
+    match month_name.to_lowercase().as_str() {
+        "january" => Some(1),
+        "february" => Some(2),
+        "march" => Some(3),
+        "april" => Some(4),
+        "may" => Some(5),
+        "june" => Some(6),
+        "july" => Some(7),
+        "august" => Some(8),
+        "september" => Some(9),
+        "october" => Some(10),
+        "november" => Some(11),
+        "december" => Some(12),
+        _ => None,
+    }
 }

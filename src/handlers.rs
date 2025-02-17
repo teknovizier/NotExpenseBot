@@ -1,12 +1,10 @@
 use chrono::{Datelike, Local};
 use log2::*;
 use notionrs::page::PageProperty;
-use notionrs::{filter::Filter, Client, RichText};
+use notionrs::{block::Block, filter::Filter, Client, RichText};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
 use std::sync::Arc;
 use teloxide::types::{KeyboardButton, KeyboardMarkup, KeyboardRemove, ParseMode};
 use teloxide::{dispatching::dialogue::InMemStorage, prelude::*, utils::command::BotCommands};
@@ -54,45 +52,69 @@ struct DatabaseInfo {
     id: String,
 }
 
-// This is a temporary solution and should be replaced in future with direct fetch with Notion API
-fn get_database_id() -> Result<String, Box<dyn Error>> {
-    // Open the JSON file.
-    let file = File::open("data.json").map_err(|e| {
-        error!("Failed to open data.json: {}", e);
-        e
-    })?;
-
-    let reader = BufReader::new(file);
-
-    let data: HashMap<String, Vec<DatabaseInfo>> =
-        serde_json::from_reader(reader).map_err(|e| {
-            error!("Failed to parse JSON from data.json: {}", e);
-            e
-        })?;
-
-    // Extract the current year and month
-    let now = Local::now();
-    let year = now.year();
-    let month = now.month();
-
-    // Retrieve the database ID for the given year and month
-    if let Some(months) = data.get(&year.to_string()) {
-        if let Some(entry) = months.iter().find(|e| e.month == month) {
-            Ok(entry.id.clone())
-        } else {
-            let error_msg = format!("No database found for month {} in year {}", month, year);
-            error!("{}", error_msg);
-            Err(error_msg.into())
-        }
-    } else {
-        let error_msg = format!("No databases found for year {}", year);
-        error!("{}", error_msg);
-        Err(error_msg.into())
-    }
-}
-
 fn is_empty_subcategory(subcategory: String) -> bool {
     subcategory.is_empty() || subcategory == "[EMPTY]"
+}
+
+async fn get_active_database_id(
+    notion_token: &str,
+    notion_parent_page_id: &str,
+) -> Result<String, Box<dyn Error>> {
+    let client = Client::new().secret(notion_token);
+
+    // Extract the current year and month
+    let now: chrono::DateTime<Local> = Local::now();
+    let current_year = now.year();
+    let current_month = now.month();
+
+    // Get the ID of a current year page
+    let request = client.get_block_children().block_id(notion_parent_page_id);
+    let response = request.send().await?;
+
+    let mut child_page_id = String::new();
+    for block_response in response.results {
+        if let Block::ChildPage { child_page } = &block_response.block {
+            let title = &child_page.title;
+            match title.parse::<i32>() {
+                Ok(year) if year == current_year => {
+                    // Found the child page with the matching year
+                    child_page_id = block_response.id;
+                    break;
+                }
+                Ok(_) => continue,
+                Err(e) => {
+                    error!("Failed to parse year: {}", e);
+                }
+            }
+        }
+    }
+
+    if !child_page_id.is_empty() {
+        // Get the ID of a current month page
+        let request = client.get_block_children().block_id(child_page_id);
+        let response = request.send().await?;
+
+        for block_response in response.results {
+            if let Block::ChildDatabase { child_database } = &block_response.block {
+                let title = &child_database.title;
+                // Convert the title to a month number
+                if let Some(month_number) = utils::get_month_number(title) {
+                    // Compare the month number with the current month
+                    if month_number == current_month {
+                        // Return the matching page
+                        return Ok(block_response.id);
+                    }
+                }
+            }
+        }
+    }
+
+    let error_msg = format!(
+        "No databases found for year {}, month number {}",
+        current_year, current_month
+    );
+    error!("{}", error_msg);
+    Err(error_msg.into())
 }
 
 async fn add_database_record(
@@ -100,11 +122,12 @@ async fn add_database_record(
     category: String,
     subcategory: String,
     notion_token: &str,
+    notion_parent_page_id: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let database_id = get_database_id()?;
     let client = Client::new().secret(notion_token);
+    let database_id = get_active_database_id(notion_token, notion_parent_page_id).await?;
 
-    let mut properties = std::collections::HashMap::new();
+    let mut properties = HashMap::new();
     properties.insert("Amount".to_string(), PageProperty::Number(amount.into()));
     properties.insert(
         "Category".to_string(),
@@ -143,10 +166,13 @@ async fn add_database_record(
     }
 }
 
-async fn get_total_amount(notion_token: &str) -> Result<f64, Box<dyn Error>> {
+async fn get_total_amount(
+    notion_token: &str,
+    notion_parent_page_id: &str,
+) -> Result<f64, Box<dyn Error>> {
     let mut total_amount = 0.0;
     let client = Client::new().secret(notion_token);
-    let database_id = get_database_id()?;
+    let database_id = get_active_database_id(notion_token, notion_parent_page_id).await?;
 
     // Dummy filter that should always work
     let filter = Filter::number_is_not_empty("Amount");
@@ -261,7 +287,7 @@ pub async fn new(
 }
 
 pub async fn get_total_expense(bot: Bot, msg: Message, config: Config) -> HandlerResult {
-    let total_amount = get_total_amount(&config.notion_token).await;
+    let total_amount = get_total_amount(&config.notion_token, &config.notion_parent_page_id).await;
     match total_amount.map_err(|e| e.to_string()) {
         Ok(amount) => {
             bot.send_message(
@@ -383,6 +409,7 @@ pub async fn handle_amount_input(
                 selected_category.clone(),
                 selected_subcategory.clone(),
                 &config.notion_token,
+                &config.notion_parent_page_id,
             )
             .await;
 

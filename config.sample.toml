@@ -4,6 +4,9 @@ teloxide_token = "<Your token here>"
 # Your Notion API token
 notion_token = "<Your token here>"
 
+# Your Notion parent page ID
+notion_parent_page_id = "<Your parent page ID here>"
+
 # The path to the bot log file
 log_path = "log.txt"
 
