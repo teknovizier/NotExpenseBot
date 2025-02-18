@@ -124,24 +124,25 @@ async fn add_database_record(
     notion_token: &str,
     notion_parent_page_id: &str,
 ) -> Result<(), Box<dyn Error>> {
+    const COLUMNS: [&str; 4] = ["Amount", "Category", "Subcategory", "Comment"];
     let client = Client::new().secret(notion_token);
     let database_id = get_active_database_id(notion_token, notion_parent_page_id).await?;
 
     let mut properties = HashMap::new();
-    properties.insert("Amount".to_string(), PageProperty::Number(amount.into()));
+    properties.insert(COLUMNS[0].to_string(), PageProperty::Number(amount.into()));
     properties.insert(
-        "Category".to_string(),
+        COLUMNS[1].to_string(),
         PageProperty::Select(category.into()),
     );
     if !is_empty_subcategory(subcategory.clone()) {
         properties.insert(
-            "Subcategory".to_string(),
+            COLUMNS[2].to_string(),
             PageProperty::Select(subcategory.into()),
         );
     }
     let default_comment = RichText::from("Added by @NotExpenseBot".to_string());
     properties.insert(
-        "Comment".to_string(),
+        COLUMNS[3].to_string(),
         PageProperty::RichText(default_comment.into()),
     );
 
