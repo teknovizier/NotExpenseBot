@@ -2,7 +2,6 @@ use chrono::{Datelike, Local};
 use log2::*;
 use notionrs::page::PageProperty;
 use notionrs::{block::Block, filter::Filter, Client, RichText};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -44,12 +43,6 @@ pub enum DialogueState {
 pub struct State {
     selected_category: Option<String>,
     selected_subcategory: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct DatabaseInfo {
-    month: u32,
-    id: String,
 }
 
 fn is_empty_subcategory(subcategory: String) -> bool {
