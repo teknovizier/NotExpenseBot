@@ -15,10 +15,6 @@ use utils::Config;
 
 #[tokio::main]
 async fn main() {
-    // Load environment variables from .env file.
-    // Fails if .env file not found, not readable or invalid.
-    let _env = dotenvy::dotenv();
-
     // Read the config file
     let config = utils::load_config("config.toml");
 

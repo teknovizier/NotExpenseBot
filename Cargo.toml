@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4"
-dotenvy = "0.15.7"
 log2 = "0.1.10"
 notionrs = "1.0.0-alpha.30"
 openssl = { version = "0.10.35", features = ["vendored"] }
